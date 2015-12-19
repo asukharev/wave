@@ -1,163 +1,85 @@
-use std::f32::consts::PI;
+// http://www-mmsp.ece.mcgill.ca/Documents/AudioFormats/WAVE/WAVE.html
+
+#![allow(dead_code)]
+
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::Write;
+mod bits;
+use bits::{Bits};
+mod wave;
+mod vec_ext;
+use vec_ext::{VecExt};
 
-fn wave(sample_rate: u32, len: u32) -> Vec<f32> {
-    let mut buffer: Vec<f32> = Vec::new();
-    let amplitude: u8 = (0.25 * 255.0) as u8; // short.MaxValue;
-    let frequency = 1000.0;
-    for n in 0..sample_rate {
-        let v =
-            amplitude as f32 *
-            (
-                (2.0 * PI * n as f32 * frequency as f32)
-                / sample_rate as f32
-            ).sin();
-        buffer.push(v);
-    }
-    buffer
-
-    // let mut b: Vec<u8> = Vec::new();
-    // for c in buffer.iter() {
-    // //     print!("{:?}", c);
-    //
-    //     let mut cc: [u8; 4] = [0; 4];
-    //     cc[0] = (((*c as u32) <<  0) >> 24) as u8;
-    //     cc[1] = (((*c as u32) <<  8) >> 24) as u8;
-    //     cc[2] = (((*c as u32) << 16) >> 24) as u8;
-    //     cc[3] = (((*c as u32) << 24) >> 24) as u8;
-    //     b.push(cc[0]);
-    //     b.push(cc[1]);
-    //     b.push(cc[2]);
-    //     b.push(cc[3]);
-    //
-    //     println!("{:?}", c);
-    //     println!("{:?}", cc);
-    // }
-
-    // let mut f: std::fs::File = match File::create("out.wav") {
-    //     Ok(ff) => ff,
-    //     Err(e) => panic!("{:?}", e),
-    // };
-
-    // match f.write_all(&b[..]) {
-    //     Ok(_) => println!("OK"),
-    //     Err(e) => panic!("{:?}", e),
-    // }
-}
-
-fn push_all(o: &mut Vec<u8>, src: &[u8]) {
-    for b in src {
-        o.push(b.clone());
-    }
-}
-
-fn push_u32_le(o: &mut Vec<u8>, c: u32) {
-    let mut cc: [u8; 4] = [0; 4];
-    cc[0] = (((c as u32) <<  0) >> 24) as u8;
-    cc[1] = (((c as u32) <<  8) >> 24) as u8;
-    cc[2] = (((c as u32) << 16) >> 24) as u8;
-    cc[3] = (((c as u32) << 24) >> 24) as u8;
-    o.push(cc[3]);
-    o.push(cc[2]);
-    o.push(cc[1]);
-    o.push(cc[0]);
-}
-
-fn push_u32_be(o: &mut Vec<u8>, c: u32) {
-    let mut cc: [u8; 4] = [0; 4];
-    cc[0] = (((c as u32) <<  0) >> 24) as u8;
-    cc[1] = (((c as u32) <<  8) >> 24) as u8;
-    cc[2] = (((c as u32) << 16) >> 24) as u8;
-    cc[3] = (((c as u32) << 24) >> 24) as u8;
-    o.push(cc[0]);
-    o.push(cc[1]);
-    o.push(cc[2]);
-    o.push(cc[3]);
-}
-
-fn push_u16(o: &mut Vec<u8>, c: u16) {
-    let mut cc: [u8; 2] = [0; 2];
-    cc[0] = (((c as u32) <<  0) >> 8) as u8;
-    cc[1] = (((c as u32) <<  8) >> 8) as u8;
-    o.push(cc[1]);
-    o.push(cc[0]);
-}
-
-// fn f32_to_u8<'a>() -> &'a [u8] {
-//
-// }
+// 0x0001 	WAVE_FORMAT_PCM 	PCM
+// 0x0003 	WAVE_FORMAT_IEEE_FLOAT 	IEEE float
+// 0x0006 	WAVE_FORMAT_ALAW 	8-bit ITU-T G.711 A-law
+// 0x0007 	WAVE_FORMAT_MULAW 	8-bit ITU-T G.711 µ-law
+// 0xFFFE 	WAVE_FORMAT_EXTENSIBLE 	Determined by SubFormat
 
 #[test]
-fn it_works() {
-    let samples_rate: u32 = 8000;
+fn generate_wave() {
+    let sample_rate: u32 = 44100;
     let channels: u16 = 1;
-    let bits_per_sample: u16 = 32;
-    let avg_bytes_per_sec: u32 = bits_per_sample as u32 / 8 * 2;
-    let duration: u32 = 0.1 as u32;
+    let bits_per_sample: u16 = 16;
+    let duration: f32 = 1.0 as f32;
 
-    let wave = wave(samples_rate, duration);
-    println!("{:?}", wave.len());
+    let wave = wave::sin(sample_rate, duration);
 
     let mut header: Vec<u8> = vec![];
     {
         // sGroupID
-        push_all(&mut header, "RIFF".as_bytes());
+        header.push_all_ext("RIFF".as_bytes());
         // dwFileLength
-        push_u32_le(&mut header, (44 + (wave.len() * 4)) as u32);
+        header.push_u32_le((44 + (wave.len() * 4)) as u32);
         // sRiffType
-        push_all(&mut header, "WAVE".as_bytes());
+        header.push_all_ext("WAVE".as_bytes());
     }
     let mut fmt: Vec<u8> = vec![];
     {
         // sGroupID
-        push_all(&mut fmt, "fmt ".as_bytes());
+        fmt.push_all_ext("fmt ".as_bytes());
         // dwChunkSize
-        push_u32_le(&mut fmt, 16 as u32);
+        fmt.push_u32_le(16 as u32);
         // wFormatTag
-        push_u16(&mut fmt, 1);
+        fmt.push_u16_le(1); // 0x0001 WAVE_FORMAT_PCM PCM
         // wChannels
-        push_u16(&mut fmt, 1);
+        fmt.push_u16_le(1);
         // dwSamplesPerSec
-        push_u32_le(&mut fmt, samples_rate);
+        fmt.push_u32_le(sample_rate);
         // dwAvgBytesPerSec
-        push_u32_le(&mut fmt, avg_bytes_per_sec); // sampleRate * blockAlign
+        fmt.push_u32_le(sample_rate as u32 * channels as u32 * bits_per_sample as u32 / 8);
         // wBlockAlign
-        push_u16(&mut fmt, channels * bits_per_sample / 8); // wChannels * (dwBitsPerSample / 8)
+        fmt.push_u16_le(channels * bits_per_sample / 8);
         // dwBitsPerSample
-        push_u16(&mut fmt, bits_per_sample); // 16
+        fmt.push_u16_le(bits_per_sample);
     }
     let mut data: Vec<u8> = vec![];
     {
         // sGroupID
-        push_all(&mut data, "data".as_bytes());
+        data.push_all_ext("data".as_bytes());
         // dwChunkSize
-        let s = samples_rate * channels as u32 * duration;
-        push_u32_le(&mut data, s as u32);
+        let s = wave.len() as u32 * channels as u32 * bits_per_sample as u32 / 8;
+        data.push_u32_le(s as u32);
         // sampleData
-        // dwSamplesPerSec * wChannels * duration of audio in seconds
         for i in 0..wave.len() {
-            // println!("{:?}", wave[i]);
-            push_u32_be(&mut data, wave[i] as u32);
-            // data.push(wave[i]);
+            // data.push_u32_le(wave[i].to_binary());
+            let sample: i16 = (wave[i] * 32768 as f32) as i16;
+            data.push_i16_le(sample);
         }
     }
 
-
-
-
     let mut out: Vec<u8> = Vec::new();
-    push_all(&mut out, &header);
-    push_all(&mut out, &fmt);
-    push_all(&mut out, &data);
+    out.push_all_ext(&header);
+    out.push_all_ext(&fmt);
+    out.push_all_ext(&data);
 
-    let mut f: std::fs::File = match File::create("out.wav") {
+    let mut f: std::fs::File = match File::create("wave.wav") {
         Ok(ff) => ff,
         Err(e) => panic!("{:?}", e),
     };
 
     match f.write_all(&out[..]) {
-        Ok(_) => println!("OK"),
+        Ok(_) => (),
         Err(e) => panic!("{:?}", e),
     }
 
