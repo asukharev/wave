@@ -1,4 +1,5 @@
 // http://www-mmsp.ece.mcgill.ca/Documents/AudioFormats/WAVE/WAVE.html
+// http://soundfile.sapp.org/doc/WaveFormat/
 
 #![allow(dead_code)]
 
@@ -23,7 +24,7 @@ fn generate_wave() {
     let bits_per_sample: u16 = 16;
     let duration: f32 = 1.0 as f32;
 
-    let wave = wave::sin(sample_rate, duration);
+    let wave = wave::sin(sample_rate, 2400, 1.0f32, duration);
 
     let mut header: Vec<u8> = vec![];
     {
@@ -62,7 +63,6 @@ fn generate_wave() {
         data.push_u32_le(s as u32);
         // sampleData
         for i in 0..wave.len() {
-            // data.push_u32_le(wave[i].to_binary());
             let sample: i16 = (wave[i] * 32768 as f32) as i16;
             data.push_i16_le(sample);
         }
